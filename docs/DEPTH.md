@@ -13,6 +13,7 @@
 | M5 保费重算 | 查看并复算保费重算 | `/api/m5_calculate` | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py` |
 | M6 补退对账 | 查看并复算补退对账 | `/api/m6_reconcile` | `app/modules/m6_reconcile/compare.py` | `tests/test_reconcile.py` |
 | M7 结案归档 | 查看并复算结案归档 | `/api/m7_archive` | `app/modules/m7_archive/export_out.py` | `tests/test_archive.py` |
+| M8 家庭组合结算 | 复核逐人补退/实收/折扣依据并结案 | `/m8_family` | `app/modules/m8_family/rules.py` | `tests/test_family_rules.py`、`tests/test_family_settlement.py` |
 
 ## 陷阱登记
 
@@ -31,10 +32,18 @@
 | TRAP-26 | 旧版本复核 | 覆盖新结论 | 事务条件更新 | `app/store.py` | `tests/test_archive.py::test_stale_review` |
 | TRAP-23 | 生效日端点 | 双计生效日 | 半开区间 | `app/modules/m4_segments/rules.py` | `tests/test_segments.py::test_halfopen_conservation` |
 | TRAP-24 | 分币尾差 | 段合计不等 | 最大余额法 | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py::test_largest_remainder_conserves` |
+| TRAP-30 | 折扣档变动 | 重开全组账单 | 应收重算+现金仅变动成员、差额挂账 | `app/modules/m8_family/rules.py` | `tests/test_family_rules.py::test_other_members_hold_no_cash_bill_kept` |
+| TRAP-31 | 同更正重跑 | 重复生成补退 | 输入指纹幂等，命中既有版本 | `app/modules/m8_family/store.py` | `tests/test_family_settlement.py::test_rerun_same_correction_is_idempotent_no_new_adjustment` |
+| TRAP-32 | 版本替换中断 | 指针悬空/半切换 | 单事务切换，失败回滚保留旧版 | `app/modules/m8_family/store.py` | `tests/test_family_settlement.py::test_interrupted_activation_rolls_back_to_old_version` |
+| TRAP-33 | 成员关系/原账单丢失 | 整组结算无法解释 | 建版即冻结快照+逐人留痕 | `app/modules/m8_family/store.py` | `tests/test_family_settlement.py::test_snapshot_retains_membership_and_bill_basis` |
+| TRAP-34 | 浮点尾差 | 组应收分摊失准 | 整数分运算+最大余额法守恒 | `app/modules/m8_family/rules.py` | `tests/test_family_rules.py::test_receivable_conservation` |
+| TRAP-35 | 结案后再更正 | 冻结结论被覆盖 | closed 先于幂等拦截，409 CLOSED | `app/modules/m8_family/store.py` | `tests/test_family_settlement.py::test_close_freezes_and_blocks_new_version` |
 
 ## 对账规则
 
 输入行数=采纳+隔离+空行+重复表头+完全重复；业务总数与计算证据独立求和。隔离行保留来源行、ID、原因码与原值。
+
+家庭组合结算另有三重守恒：各人新应收之和=组应收；账面差额合计=现金补退合计+折扣挂账合计；新组应收−原组应收=组账面差额。任一不守恒则界面不显示“核对相符”，且结案文件保留逐项校验结果。
 
 ## 已知不覆盖
 

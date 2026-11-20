@@ -31,3 +31,5 @@ target/
 *.o
 *.obj
 .DS_Store
+# 本地无 flask/pytest 环境下的标准库测试垫片，不进仓库（CI/Docker 用真依赖）
+.stub/

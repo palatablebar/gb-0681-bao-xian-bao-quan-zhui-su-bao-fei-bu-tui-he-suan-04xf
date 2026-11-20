@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="document-grid">
+  <section class="panel">
+    <header><h2>组合与档位裁决</h2><span>{{ data.combo_id }}</span></header>
+    <dl>
+      <dt>追溯期</dt><dd>{{ data.period.start }} ~ {{ data.period.end }}</dd>
+      <dt>触发成员</dt><dd>{{ data.trigger_id }}</dd>
+      <dt>折扣档变化</dt>
+      <dd>{{ data.tier_change.old_tier_name }}（{{ data.tier_change.old_tier }}档）→
+        <b>{{ data.tier_change.new_tier_name }}（{{ data.tier_change.new_tier }}档）</b>，费率 {{ data.tier_change.rate }}</dd>
+      <dt>组标准保费</dt><dd>{{ data.group.standard_yuan }} 元</dd>
+      <dt>规则版本</dt><dd>{{ data.rule_version }}</dd>
+      <dt>结果指纹</dt><dd class="hash">{{ data.result_hash[:16] }}…</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <header><h2>整组资金账</h2></header>
+    <dl>
+      <dt>新组应收</dt><dd>{{ data.group.receivable_yuan }} 元</dd>
+      <dt>原组应收</dt><dd>{{ data.group.old_billed_yuan }} 元</dd>
+      <dt>账面差额</dt>
+      <dd class="amount">{{ data.group.book_delta_yuan }} 元
+        （{{ '退' if data.group.book_delta_cents < 0 else ('补' if data.group.book_delta_cents > 0 else '平') }}）</dd>
+      <dt>现金补退（仅变动成员）</dt>
+      <dd class="amount">{{ data.group.cash_delta_yuan }} 元
+        （{{ '退' if data.group.cash_delta_cents < 0 else ('补' if data.group.cash_delta_cents > 0 else '平') }}）</dd>
+      <dt>折扣挂账（非现金）</dt><dd>{{ data.group.hold_delta_yuan }} 元</dd>
+      <dt>实收结转</dt><dd>{{ data.group.paid_yuan }} 元</dd>
+    </dl>
+    <div class="stamp">{{ '核对相符' if data.conservation.delta_conserved and data.conservation.receivable_conserved else '待核对' }}</div>
+  </section>
+
+  <section class="panel wide">
+    <header><h2>成员组合结算（逐人补退 · 实收 · 折扣依据）</h2><span>{{ data.members|length }} 人</span></header>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>成员</th><th>去向</th><th>账单</th><th>折扣依据</th>
+            <th>原账单应收</th><th>新档应收</th><th>实收</th>
+            <th>账面补退</th><th>现金补退</th><th>折扣挂账</th><th>账户余额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in data.members %}
+          <tr class="{{ 'trigger' if m.trigger else '' }}">
+            <td>{{ m.name }}<br><small>{{ m.member_id }}{{ '（变动）' if m.trigger else '' }}</small></td>
+            <td><span class="tag {{ m.disposition|lower }}">{{ m.disposition_text }}</span></td>
+            <td>{{ '重开' if m.reopen_bill else '保持有效' }}</td>
+            <td><small>{{ m.old_tier }}档→{{ m.new_tier }}档<br>费率 {{ m.discount_rate }}</small></td>
+            <td class="num">{{ m.amounts.old_billed }}</td>
+            <td class="num">{{ m.amounts.new_receivable }}</td>
+            <td class="num">{{ m.amounts.paid }}</td>
+            <td class="num amount">{{ m.amounts.book_delta_sign }} {{ m.amounts.book_delta }}</td>
+            <td class="num amount">{{ m.amounts.cash_delta_sign }} {{ m.amounts.cash_delta }}</td>
+            <td class="num">{{ m.amounts.hold_delta }}</td>
+            <td class="num">{{ m.amounts.balance_after }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>守恒校验</h2></header>
+    <dl>
+      <dt>应收守恒</dt><dd>{{ '通过' if data.conservation.receivable_conserved else '失败' }}<small>各人新应收之和 = 组应收</small></dd>
+      <dt>差额守恒</dt><dd>{{ '通过' if data.conservation.delta_conserved else '失败' }}<small>账面差额 = 现金 + 挂账</small></dd>
+      <dt>组口径守恒</dt><dd>{{ '通过' if data.conservation.group_conserved else '失败' }}<small>新组应收 − 原组应收 = 组账面差额</small></dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <header><h2>档位依据</h2></header>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>档位</th><th>组标准保费下限(元)</th><th>折扣率</th></tr></thead>
+        <tbody>
+          {% for t in data.basis.tier_table %}
+          <tr><td>{{ t.name }}（{{ t.tier }}档）</td><td class="num">{{ t.threshold_yuan }}</td><td class="num">{{ t.rate }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <header><h2>版本与复核</h2><span id="m8-status">{{ status_text.get(current_data.status, '未建版') if current_data else '未建版' }}</span></header>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>版本</th><th>状态</th><th>指纹(前12位)</th><th>建立(UTC)</th><th>复核(UTC)</th></tr></thead>
+        <tbody id="m8-versions">
+          {% for v in version_rows %}
+          <tr><td class="num">v{{ v.version }}</td><td>{{ status_text.get(v.status, v.status) }}</td>
+            <td><small>{{ v.fingerprint[:12] }}</small></td><td><small>{{ v.created_at[:19] }}</small></td>
+            <td><small>{{ (v.reviewed_at or '')[:19] }}</small></td></tr>
+          {% else %}
+          <tr><td colspan="5">尚无版本，点击“建立待复核版本”（变更已采信，整组金额待复核）</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button id="m8-build" class="primary" data-combo="{{ data.combo_id }}">建立待复核版本</button>
+      <button id="m8-activate" data-combo="{{ data.combo_id }}">复核通过并生效</button>
+      <button id="m8-close" data-combo="{{ data.combo_id }}">结案冻结</button>
+      <a class="button" id="m8-download" href="/api/m8_family/settlements/{{ data.combo_id }}/closing.csv">下载结案文件</a>
+    </div>
+    <div id="m8-feedback" role="status" aria-live="polite"></div>
+  </section>
+</div>
+<script>
+'use strict';
+(function(){
+  const combo={{ data.combo_id|tojson }};
+  const fb=document.getElementById('m8-feedback');
+  async function call(url,method){
+    fb.textContent='处理中…';
+    const r=await fetch(url,{method:method,headers:{'Content-Type':'application/json'}});
+    const b=await r.json().catch(()=>({}));
+    if(!r.ok){fb.textContent=(b.message||'操作失败');return null;}
+    return b;
+  }
+  document.getElementById('m8-build').addEventListener('click',async()=>{
+    const b=await call('/api/m8_family/settlements','POST');
+    if(b){fb.textContent=(b.idempotent_hit?'命中既有版本（幂等，未新增补退） v':'已建立待复核版本 v')+b.version;setTimeout(()=>location.reload(),600);}
+  });
+  document.getElementById('m8-activate').addEventListener('click',async()=>{
+    const rows=await call('/api/m8_family/settlements/'+combo+'/versions','GET');
+    if(!rows)return;
+    const staged=rows.filter(v=>v.status==='staged').sort((a,b)=>b.version-a.version)[0];
+    if(!staged){fb.textContent='没有待复核版本';return;}
+    const b=await call(`/api/m8_family/settlements/${combo}/versions/${staged.version}/activate`,'POST');
+    if(b){fb.textContent='已生效 v'+b.version+'，当前指针已切换（旧版保留可追溯）';setTimeout(()=>location.reload(),600);}
+  });
+  document.getElementById('m8-close').addEventListener('click',async()=>{
+    const b=await call('/api/m8_family/settlements/'+combo+'/close','POST');
+    if(b){fb.textContent='已结案冻结 v'+b.version;setTimeout(()=>location.reload(),600);}
+  });
+})();
+</script>
+{% endblock %}
